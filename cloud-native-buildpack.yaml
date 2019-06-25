@@ -1,0 +1,110 @@
+resources:
+- name: sample-java-app
+  type: git
+  source:
+    uri: https://github.com/buildpack/sample-java-app.git
+    branch: master
+
+- name: buildpack-builder-image
+  type: docker-image
+  source:
+    repository: heroku/buildpacks
+    tag: 18
+    # the "cloudfoundry/cnb" builder image does not work. I think b/c it has a
+    # read-only file system. need to understand if there is a way for concourse
+    # to share an external volume
+    # repository: cloudfoundry/cnb
+    # tag: cflinuxfs3
+
+jobs:
+- name: buildpack
+  plan:
+  - aggregate:
+    - get: sample-java-app
+    - get: buildpack-builder-image
+
+  - task: detect
+    image: buildpack-builder-image
+    config:
+      platform: linux
+      inputs:
+      - name: sample-java-app
+      outputs:
+      - name: detect-layers
+        path: layers
+      caches:
+      - path: layers
+      run:
+        path: /lifecycle/detector
+        args:
+        - -app=./sample-java-app
+        - -group=layers/group.toml
+        - -plan=layers/plan.toml
+
+  - task: analyze
+    image: buildpack-builder-image
+    config:
+      platform: linux
+      inputs:
+      - name: sample-java-app
+      - name: detect-layers
+        path: layers
+      outputs:
+      - name: analyze-layers
+        path: layers
+      caches:
+      - path: layers
+      run:
+        path: /lifecycle/analyzer
+        args:
+        - -app=./sample-java-app
+        - -group=layers/group.toml
+        - ((docker_username))/sample-java-app
+
+  - task: build
+    image: buildpack-builder-image
+    config:
+      platform: linux
+      inputs:
+      - name: sample-java-app
+      - name: analyze-layers
+        path: layers
+      outputs:
+      - name: build-layers
+        path: layers
+      caches:
+      - path: layers
+      run:
+        path: /lifecycle/builder
+        args:
+        - -app=./sample-java-app
+        - -layers=layers
+        - -group=layers/group.toml
+        - -plan=layers/plan.toml
+
+  - task: export
+    image: buildpack-builder-image
+    config:
+      platform: linux
+      inputs:
+      - name: sample-java-app
+      - name: build-layers
+        path: layers
+      outputs:
+      - name: export-layers
+        path: layers
+      caches:
+      - path: layers
+      params:
+        DOCKER_USERNAME: ((docker_username))
+        DOCKER_AUTH: ((docker_auth))
+      run:
+        path: /bin/bash
+        args:
+        - -c
+        - |
+          #/bin/bash
+          mkdir -p /root/.docker
+          echo "{\"auths\": {\"https://index.docker.io/v1/\": {\"auth\": \"$DOCKER_AUTH\"}}}" > /root/.docker/config.json
+
+          /lifecycle/exporter -app=./sample-java-app -layers=layers -group=layers/group.toml -helpers=true -image=heroku/pack:18 $DOCKER_USERNAME/sample-java-app:0.1
