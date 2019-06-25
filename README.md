@@ -21,13 +21,13 @@ rm fly-5.3.0-darwin-amd64.tgz
 
 The `analyze` and `export` tasks must be configured with a Docker Hub repository that you have access to. In addition, the `export` task needs a Docker Hub token so that it can push an image. Both of these settings are configured in the `config.yaml` file.
 
-You should be able to get a valid token from `~/.docker/config.json` if you have authenticated your docker client (via `docker login`).
-
-This command can extract the token for you (at least it works on my machine, requires [`jq`](https://stedolan.github.io/jq/)):
+The Docker Hub auth token is just a base64 encoding of the string "<docker_user_name>:<docker_password>". You can generate it by running:
 
 ```shell
-cat ~/.docker/config.json | jq -r '.auths["https://index.docker.io/v1/"].auth'
+echo -n "<docker_user_name>:<docker_password>" | base64
 ```
+
+You can copy that output into `config.yaml`.
 
 ## Start Concourse
 
@@ -46,6 +46,8 @@ fly --target bptest login --concourse-url http://127.0.0.1:8080 -u admin -p admi
 ## Access the Concourse UI
 
 [http://127.0.0.1:8080/](http://127.0.0.1:8080/)
+
+Login with "admin:admin". I intermittently get an error when logging in. I don't know why. It usually works on the next attempt so keep trying.
 
 ## Create (or Update) the Pipeline
 
